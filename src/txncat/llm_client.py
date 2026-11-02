@@ -100,6 +100,7 @@ class MoonshotClient:
         from openai import OpenAI
 
         self.model = model or os.getenv("MOONSHOT_MODEL", "kimi-k2.6")
+        self.thinking = os.getenv("MOONSHOT_THINKING", "enabled")
         key = api_key or os.getenv("MOONSHOT_API_KEY")                                  # blank 1
         if not key:
             raise ValueError("MOONSHOT_API_KEY is not set — add it to your .env file")
@@ -115,6 +116,7 @@ class MoonshotClient:
                     {"role": "user", "content": user},
                 ],
                 max_completion_tokens=4000,    # NO temperature: Kimi models reject it
+                extra_body={"thinking": {"type": self.thinking}},
             )
             return LLMResponse(
                 text=resp.choices[0].message.content or "",
