@@ -50,10 +50,11 @@ class BaselineClassifier:
     Target: val accuracy >= 0.75 overall and >= 0.95 on merchants seen in training.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, analyzer: str = "char_wb", ngram_range: tuple[int, int] = (2, 5),
+                 C: float = 10.0) -> None:
         self.pipeline = make_pipeline(
-            TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), sublinear_tf=True, min_df=2),
-            LogisticRegression(C=10, max_iter=2000),
+            TfidfVectorizer(analyzer=analyzer, ngram_range=ngram_range, sublinear_tf=True, min_df=2),
+            LogisticRegression(C=C, max_iter=2000),
         )
 
     @property
