@@ -15,6 +15,7 @@ import os
 import time
 from dataclasses import dataclass
 from typing import Callable, Protocol
+from dotenv import load_dotenv
 
 
 @dataclass
@@ -92,21 +93,37 @@ class AnthropicClient:
 
 
 class MoonshotClient:
-    """Calls Moonshot (Kimi) through its OpenAI-compatible Chat Completions API.
-
-    Requirements: same as AnthropicClient, but
-      * use `openai.OpenAI(api_key=..., base_url=MOONSHOT_BASE_URL)`;
-      * the system prompt goes in as a {"role": "system"} message;
-      * tokens come from response.usage.prompt_tokens / completion_tokens.
-    """
+    """Calls Moonshot (Kimi) through its OpenAI-compatible Chat Completions API."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None,
                  base_url: str | None = None) -> None:
-        raise NotImplementedError("Step 4: implement MoonshotClient")
+        from openai import OpenAI
+
+        self.model = model or os.getenv("MOONSHOT_MODEL", "kimi-k2.6")
+        key = api_key or os.getenv("MOONSHOT_API_KEY")                                  # blank 1
+        if not key:
+            raise ValueError("MOONSHOT_API_KEY is not set — add it to your .env file")
+        self.client = OpenAI(api_key=key, base_url=base_url or os.getenv("MOONSHOT_BASE_URL"))   # blank 2
 
     def complete(self, system: str, user: str) -> LLMResponse:
-        raise NotImplementedError
+        def call() -> LLMResponse:
+            t0 = time.perf_counter()
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                max_completion_tokens=4000,    # NO temperature: Kimi models reject it
+            )
+            return LLMResponse(
+                text=resp.choices[0].message.content or "",
+                input_tokens=resp.usage.prompt_tokens,                             # blank 3
+                output_tokens=resp.usage.completion_tokens,                            # blank 4
+                latency_s=time.perf_counter() - t0,
+            )
 
+        return with_retries(call)
 
 def make_client_from_env() -> LLMClient:
     """Return AnthropicClient or MoonshotClient depending on LLM_PROVIDER.
@@ -114,8 +131,13 @@ def make_client_from_env() -> LLMClient:
     Raise ValueError with a helpful message for any other value.
     Call `dotenv.load_dotenv()` first so a local .env file is picked up.
     """
-    raise NotImplementedError("Step 4: implement make_client_from_env")
-
+    load_dotenv()
+    provider = os.getenv("LLM_PROVIDER")
+    if provider == "moonshot":
+        return MoonshotClient()
+    raise ValueError(
+        f"Unknown LLM_PROVIDER {provider!r}; only 'moonshot' is implemented"
+    )
 
 def _smoke_test() -> None:
     """python -m txncat.llm_client  — one real call, prints the reply and token usage."""
