@@ -15,7 +15,12 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import joblib
 import numpy as np
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
 
 from txncat.schema import Prediction
 
@@ -46,30 +51,57 @@ class BaselineClassifier:
     """
 
     def __init__(self) -> None:
-        self.pipeline = None  # build your sklearn Pipeline here
+        self.pipeline = make_pipeline(
+            TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), sublinear_tf=True, min_df=2),
+            LogisticRegression(C=10, max_iter=2000),
+        )
 
     @property
     def classes_(self) -> list[str]:
-        raise NotImplementedError
+        return list(self.pipeline.classes_)
+
+
 
     def fit(self, texts: list[str], labels: list[str]) -> "BaselineClassifier":
-        raise NotImplementedError("Step 3: implement fit")
+        self.pipeline.fit(texts, labels)
+        return self
 
     def predict(self, texts: list[str]) -> list[str]:
-        raise NotImplementedError
+        return list(self.pipeline.predict(texts))
 
     def predict_proba(self, texts: list[str]) -> np.ndarray:
-        raise NotImplementedError
+        return self.pipeline.predict_proba(texts)
 
     def predict_with_confidence(self, texts: list[str]) -> list[Prediction]:
-        raise NotImplementedError
+        t0 = time.perf_counter()
+        proba = self.predict_proba(texts)  # shape: (n_texts, n_classes)
+        elapsed = time.perf_counter() - t0
+        per_item = elapsed / max(len(texts), 1)  # max(..., 1) avoids dividing by 0 on empty input
+
+        classes = self.classes_  # e.g. ["Bills", "Cash", "Entertainment", ...]
+        predictions = []
+        for row in proba:  # one row per text, e.g. [0.01, 0.02, 0.91, ...]
+            best = row.argmax()  # position of the largest probability -> 2
+            predictions.append(
+                Prediction(
+                    category=str(classes[best]),  # "Entertainment"  (str(): plain Python string)
+                    confidence=float(row[best]),  # 0.91             (float(): plain Python float)
+                    source="baseline",
+                    latency_s=per_item,
+                )
+            )
+        return predictions
+
 
     def save(self, path: Path = MODEL_PATH) -> None:
-        raise NotImplementedError
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.pipeline, path)
 
     @classmethod
     def load(cls, path: Path = MODEL_PATH) -> "BaselineClassifier":
-        raise NotImplementedError
+        obj = cls()
+        obj.pipeline = joblib.load(path)
+        return obj
 
 
 def main() -> None:
@@ -79,7 +111,24 @@ def main() -> None:
     seen in training, and on rows whose merchant was NOT seen. The gap between
     the last two is the most important finding of this step.
     """
-    raise NotImplementedError("Step 3: implement main")
+    # 1. Load the data
+    train = pd.read_csv("data/train.csv")
+    val = pd.read_csv("data/val.csv")                                 # same for val
+
+    # 2. Train and save
+    model = BaselineClassifier().fit(train.description.tolist(), train.category.tolist())
+    model.save()
+
+    # 3. Predict on val and compare with the truth
+    pred = np.array(model.predict(val.description.tolist()))
+    correct = pred == val.category.to_numpy()   # array of True/False, one per row
+
+    # 4. Split by seen / unseen merchant
+    seen = (val.merchant_seen_in_train == 1).to_numpy()                                 # True where merchant_seen_in_train == 1
+
+    print(f"val accuracy (all):    {correct.mean():.3f}")
+    print(f"val accuracy (seen):   {correct[seen].mean():.3f}")
+    print(f"val accuracy (unseen): {correct[~seen].mean():.3f}")
 
 
 if __name__ == "__main__":
