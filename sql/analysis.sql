@@ -78,7 +78,37 @@ ORDER BY avg_len;
 --         Short = harder for unseen merchants: no context word like PHARMACY or CINEMAS,
 --         and few character n-grams for the model to use.
 
--- Q7 (do this AFTER Step 6, when predictions exist in table `predictions`).
---     Error rate per category for each system, worst first.
---     Table `predictions` has: id, split, system, predicted_category.
---     Join it to `transactions` on (id, split).
+-- Q7. Error rate per category for each system on test, worst first
+SELECT p.system,
+       t.category,
+       COUNT(*) AS n,
+       ROUND(100.0 * SUM(p.predicted_category != t.category) / COUNT(*), 1) AS error_pct
+FROM predictions p
+JOIN transactions t ON p.id = t.id AND p.split = t.split
+WHERE p.split = 'test'
+GROUP BY p.system, t.category
+ORDER BY error_pct DESC
+LIMIT 15;
+-- Answer:
+
+-- Q8. Which merchants cause the hybrid's errors on test?
+SELECT t.merchant,
+       t.category            AS truth,
+       p.predicted_category  AS predicted,
+       COUNT(*)              AS n_errors
+FROM predictions p
+JOIN transactions t ON p.id = t.id AND p.split = t.split
+WHERE p.split = 'test'
+  AND p.system = 'hybrid'
+  AND p.predicted_category != t.category
+GROUP BY t.merchant, t.category, p.predicted_category
+ORDER BY n_errors DESC
+LIMIT 10;
+-- Answer:
+-- Answer (Q7): baseline errs 15-34% in most categories; LLM-only's worst is Travel 13.8%
+--   (taxonomy ambiguity: trains/coaches between cities); hybrid's worst is Health 11.7%,
+--   entirely one merchant (Vision Express).
+-- Answer (Q8): 6 unseen merchants cause ~90% of hybrid errors (45 of ~50). Each is a confident
+--   baseline error from a misleading shared fragment: EXPRESS (Tesco Express), POLSKA (PGE Polska),
+--   TV (TV Licence), .CO.UK/code (online shops). Errors concentrate per merchant -> a merchant
+--   override table or novelty detection would remove most of them.
