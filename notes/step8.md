@@ -28,3 +28,15 @@
    it is passed at runtime with --env-file.
 4. Input limits (100 transactions, 200 chars) cap cost and abuse: every description may go to a
    paid LLM.
+
+## Docker
+- Image builds and serves the API (same answers as local uvicorn); `docker ps` shows (healthy).
+- Dependencies installed in a separate layer -> code-only rebuilds are fast.
+- Model baked in; API key passed at runtime (--env-file), never in the image. Runs as non-root.
+- scikit-learn pinned to the version that saved models/baseline.joblib: a pickled model is tied
+  to the library version that created it.
+
+   - Built and ran in Docker: `docker ps` -> Up (healthy). Dependency layer 147 s on first build,
+     code layer 11.5 s; code-only rebuilds reuse the cached dependency layer.
+   - First build failed: Docker Desktop couldn't reach Docker Hub from China without a proxy;
+     fixed by configuring the proxy. Python packages via the Tsinghua PyPI mirror (--build-arg).

@@ -1,7 +1,17 @@
+# Never send secrets or local environments into the image
 .env
 .venv
-.cache
+.idea
+.git
+
+# Not needed to run the API
 data
 tests
+notes
+reports
+scripts
+sql
+.cache
 __pycache__
 *.egg-info
+build
